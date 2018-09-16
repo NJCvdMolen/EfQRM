@@ -106,10 +106,11 @@ def regress(df):
 
 def optimize(df):
     """
-
+    Compute loglikelihood of regression model
     :param df:
     :return:
     """
+
 
 
 def main():
