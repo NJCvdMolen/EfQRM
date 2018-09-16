@@ -448,7 +448,7 @@ def EstimateRegr_normal(mX, vY):
     mS2 = GetCovML(AvgNLnLRegr, vP, iN)
     vS = np.sqrt(np.diag(mS2))
 
-    return vP, vS, dLL, sMess, mS2
+    return vP, vS, dLL, sMess
 
 
 def LnLRegr_student_t(vP, vY, mX):
@@ -470,11 +470,11 @@ def LnLRegr_student_t(vP, vY, mX):
 
     (dSigma, dDegFree, vBeta) = GetPars_student_t(vP)
     if (dSigma <= 0):
-        print ("x", end="")
+        print ("x1", end="")
         return -math.inf
 
     if (dDegFree < 3):
-        print("x", end="")
+        print("x2", end="")
         return -math.inf
 
     vE= vY - mX @ vBeta
@@ -513,7 +513,7 @@ def EstimateRegr_student_t(mX, vY):
     print("Initial LL= ", dLL, "\nvP0=", vP0)
 
     # Create lambda function returning NEGATIVE AVERAGE LL, as function of vP only
-    AvgNLnLRegr= lambda vP: -LnLRegr_student_t(vP, vY, mX)/iN
+    AvgNLnLRegr_t= lambda vP: -LnLRegr_student_t(vP, vY, mX)/iN
     # Create function returning NEGATIVE average LL, as function of vP, vY, mX
     # AvgNLnLRegrXY= lambda vP, vY, mX: -LnLRegr(vP, vY, mX)/iN
 
@@ -521,17 +521,75 @@ def EstimateRegr_student_t(mX, vY):
     for i in range(iK):
         bounds.append((None, None))
 
-    res= opt.minimize(AvgNLnLRegr, vP0, args=(), method="L-BFGS-B", bounds=bounds)
+    res= opt.minimize(AvgNLnLRegr_t, vP0, args=(), method="L-BFGS-B", bounds=bounds)
     # res= opt.minimize(AvgNLnLRegrXY, vP0, args=(vY, mX), method="BFGS")
     vP= res.x
     sMess= res.message
     dLL= -iN*res.fun
     #print ("\nBFGS results in ", sMess, "\nPars: ", vP, "\nLL= ", dLL, ", f-eval= ", res.nfev)
 
-    mS2= GetCovML(AvgNLnLRegr, vP, iN)
+    mS2= GetCovML(AvgNLnLRegr_t, vP, iN)
     vS= np.sqrt(np.diag(mS2))
 
     return vP, vS, dLL, sMess
+
+
+def GetParNames_norm(iK):
+    """
+    Purpose:
+      Construct names for the parameters from the vector
+
+    Inputs:
+      iK        integer, number of beta's
+
+    Return value:
+      asP       iK array, with strings "sigma", "b1", ...
+    """
+    asP= ["B"+str(i+1) for i in range(iK)]
+    asP= ["Sigma"] + asP
+    return asP
+
+def GetParNames_student(iK):
+    """
+    Purpose:
+      Construct names for the parameters from the vector
+
+    Inputs:
+      iK        integer, number of beta's
+
+    Return value:
+      asP       iK array, with strings "sigma", "b1", ...
+    """
+    asP= ["B"+str(i+1) for i in range(iK)]
+    asP = ["Degrees of freedom"] + asP
+    asP= ["Sigma"] + asP
+    return asP
+
+def Output_norm(mPPS, dLL, sMess):
+    """
+    Purpose:
+      Provide output on screen
+    """
+    iK= mPPS.shape[1]-1
+    print ("\n\nEstimation resulted in ", sMess)
+    print ("Using ML with LL= ", dLL)
+
+    print ("Parameter estimates:\n",
+           pd.DataFrame(mPPS.T, index=GetParNames_norm(iK), columns=["PHat", "s(P)"]))
+
+def Output_student(mPPS, dLL, sMess):
+    """
+    Purpose:
+      Provide output on screen
+    """
+
+    iK= mPPS.shape[1]-2
+    print ("\n\nEstimation resulted in ", sMess)
+    print ("Using ML with LL= ", dLL)
+
+    print ("Parameter estimates:\n",
+           pd.DataFrame(mPPS.T, index=GetParNames_student(iK), columns=["PHat", "s(P)"]))
+
 
 def optimize(df):
     """
@@ -542,9 +600,12 @@ def optimize(df):
     mX = sm.add_constant(df["sp500"])
     vY = df["ibm"]
     print('Optimizing with normal')
-    EstimateRegr_normal(mX, vY)
+    vP, vS, dLnPdf, sMess = EstimateRegr_normal(mX, vY)
+    Output_norm(np.vstack([vP, vS]), dLnPdf, sMess)
     print('Optimizing with student t')
-    EstimateRegr_student_t(mX, vY)
+    vP, vS, dLnPdf, sMess = EstimateRegr_student_t(mX, vY)
+    Output_student(np.vstack([vP, vS]), dLnPdf, sMess)
+
 
 def main():
     #Magic 'Numbers'
