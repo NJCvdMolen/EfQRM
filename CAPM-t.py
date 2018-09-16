@@ -4,6 +4,7 @@ import pandas as pd
 import statsmodels.api as sm
 import scipy.optimize as opt
 import scipy.stats as st
+import matplotlib.pyplot as plt
 import math
 
 ###########################################################
@@ -595,16 +596,55 @@ def optimize(df):
     """
     Performs the ML optimization
     :param: df a dataframe with sp500 and ibm data
-    :return:
+    :return: returns results for both optimizations
     """
     mX = sm.add_constant(df["sp500"])
     vY = df["ibm"]
     print('Optimizing with normal')
-    vP, vS, dLnPdf, sMess = EstimateRegr_normal(mX, vY)
-    Output_norm(np.vstack([vP, vS]), dLnPdf, sMess)
+    vPn, vSn, dLnPdfn, sMessn = EstimateRegr_normal(mX, vY)
+    Output_norm(np.vstack([vPn, vSn]), dLnPdfn, sMessn)
     print('Optimizing with student t')
-    vP, vS, dLnPdf, sMess = EstimateRegr_student_t(mX, vY)
-    Output_student(np.vstack([vP, vS]), dLnPdf, sMess)
+    vPt, vSt, dLnPdft, sMesst = EstimateRegr_student_t(mX, vY)
+    Output_student(np.vstack([vPt, vSt]), dLnPdft, sMesst)
+
+    return (vPn, vSn, dLnPdfn, sMessn), (vPt, vSt, dLnPdft, sMesst)
+
+def plots(df, res):
+    """
+    Creates several plots for the report
+    :param: df, dataframe with sp500 and ibm return data,
+            res, the result of the optimization
+    :return:
+    """
+
+    mX = sm.add_constant(df["sp500"])
+    vY = df["ibm"]
+    vP, vS, dLnPdf, sMess = res
+
+    plt.subplot(1, 2, 1)
+    plt.scatter(df["sp500"], df["ibm"])
+    plt.title('CAPM normal regression')
+    plt.xlabel('SP-500 excess returns')
+    plt.ylabel('IBM excess returns')
+    axes = plt.gca()
+    x_vals = np.array(axes.get_xlim())
+    y_vals = vP[1] + vP[2] * x_vals
+    plt.plot(x_vals, y_vals, color='k', linestyle='-', linewidth=2)
+
+    plt.subplot(1, 2, 2)
+    residuals = vY - np.dot(sm.add_constant(mX), [vP[1], vP[2]])
+    resids_mean = np.mean(residuals)
+    resids_sigma = np.sqrt(np.mean(residuals))
+
+    mu, std = st.norm.fit(residuals)
+
+    plt.hist(residuals, bins=25, density=True, alpha=0.6, edgecolor='black')
+    xmin, xmax = plt.xlim()
+    x_dist = np.linspace(xmin, xmax, 100)
+    pdf = st.norm.pdf(x_dist, mu, std)
+    plt.plot(x_dist, pdf, 'k')
+    plt.title('Histogram Residuals and normal distribution')
+    plt.show()
 
 
 def main():
@@ -616,7 +656,8 @@ def main():
 
     #output
     regress(e_returns_df)
-    optimize(e_returns_df)
+    res_n, res_t = optimize(e_returns_df)
+    plots(e_returns_df, res_n)
 
 
 if __name__ == "__main__":
