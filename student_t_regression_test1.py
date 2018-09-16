@@ -246,6 +246,7 @@ def GetPars(vP):
 
     Return value:
       dS        double, sigma
+      ddf       degrees of freedom
       vBeta     iK vector, beta's
     """
     iK= np.size(vP)-1
@@ -271,8 +272,8 @@ def GetParNames(iK):
       asP       iK array, with strings "sigma", "b1", ...
     """
     asP= ["B"+str(i+1) for i in range(iK)]
+    asP = ["Degrees of freedom"] + asP
     asP= ["Sigma"] + asP
-
     return asP
 
 ###########################################################
@@ -306,7 +307,7 @@ def GenrY(vP, mX):
     """
     iN= mX.shape[0]
     (dS, ddf, vBeta)= GetPars(vP)
-    vY= mX@vBeta + dS * np.random.standard_t(ddf, iN)
+    vY= mX@vBeta + dS * np.random.standard_t(ddf, iN)*np.sqrt((ddf-2)/ddf)
 
     return vY
 
@@ -330,22 +331,20 @@ def LnLRegr(vP, vY, mX):
         print ("Warning: wrong size vP= ", vP)
 
     (dSigma, dDegFree, vBeta)= GetPars(vP)
-    print(GetPars(vP))
     if (dSigma <= 0):
         print ("x", end="")
         return -math.inf
 
-    if (dDegFree < 2):
+    if (dDegFree < 3):
         print("x", end="")
         return -math.inf
 
     vE= vY - mX @ vBeta
 
-    vLL = st.t.logpdf(x=vE, df=dDegFree, loc=dSigma)
+    vLL = st.t.logpdf(x=vE, df=dDegFree, loc=np.sqrt(dSigma))
     dLL= np.sum(vLL, axis= 0)
 
     print(".", end="")             # Give sign of life
-    print(dLL)
 
     return dLL
 
@@ -368,7 +367,7 @@ def EstimateRegr(vY, mX):
     """
     (iN, iK)= mX.shape
     vP0= np.ones(iK+2)        # Get (bad...) starting values
-    vP0[1] = 2
+    vP0[1] = 3
 
     # vB= np.linalg.lstsq(mX, vY)[0]
     # vP0= np.vstack([[[1]], vB])
@@ -381,7 +380,7 @@ def EstimateRegr(vY, mX):
     # Create function returning NEGATIVE average LL, as function of vP, vY, mX
     # AvgNLnLRegrXY= lambda vP, vY, mX: -LnLRegr(vP, vY, mX)/iN
 
-    bounds = [(0, None), (2, None)]
+    bounds = [(0, None), (3, None)]
     for i in range(iK):
         bounds.append((None, None))
 
@@ -394,6 +393,8 @@ def EstimateRegr(vY, mX):
     print ("\nBFGS results in ", sMess, "\nPars: ", vP, "\nLL= ", dLL, ", f-eval= ", res.nfev)
 
     mS2= GetCovML(AvgNLnLRegr, vP, iN)
+    print('\n')
+    print(np.diag(mS2))
     vS= np.sqrt(np.diag(mS2))
 
     return (vP, vS, dLL, sMess)
@@ -405,7 +406,7 @@ def Output(mPPS, dLL, sMess):
     Purpose:
       Provide output on screen
     """
-    iK= mPPS.shape[1]-1
+    iK= mPPS.shape[1]-2
     print ("\n\nEstimation resulted in ", sMess)
     print ("Using ML with LL= ", dLL)
 
@@ -416,7 +417,7 @@ def Output(mPPS, dLL, sMess):
 ###########################################################
 ### main
 def main():
-    vP0= [.1, 20, 5, 2, -2]    #dSigma, dDegFree and vBeta together
+    vP0= [0.1, 20, 5, 2, -2]    #dSigma, dDegFree and vBeta together
     iN= 1000
     iSeed= 1234
 
@@ -429,7 +430,8 @@ def main():
     vY= GenrY(vP0, mX)
 
     (vP, vS, dLnPdf, sMess)= EstimateRegr(vY, mX)
-    Output(np.vstack([vP0, vP, vS]), dLnPdf, sMess);
+    Output(np.vstack([vP0, vP, vS]), dLnPdf, sMess)
+
 
 ###########################################################
 ### start main
