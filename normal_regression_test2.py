@@ -401,7 +401,11 @@ def EstimateRegr(vY, mX):
     # Create function returning NEGATIVE average LL, as function of vP, vY, mX
     # AvgNLnLRegrXY= lambda vP, vY, mX: -LnLRegr(vP, vY, mX)/iN
 
-    res= opt.minimize(AvgNLnLRegr, vP0, args=(), method="BFGS")
+    bounds = [(0, None)]
+    for i in range(iK):
+        bounds.append((None, None))
+
+    res= opt.minimize(AvgNLnLRegr, vP0, args=(), method="L-BFGS-B", bounds=bounds)
     # res= opt.minimize(AvgNLnLRegrXY, vP0, args=(vY, mX), method="BFGS")
 
     vP= res.x
