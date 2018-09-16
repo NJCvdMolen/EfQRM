@@ -155,7 +155,6 @@ def hessian_2sided(fun, vP, *args):
         if nu: #make sure degrees of freedom is correct
             vPpT[1] = vP[1]
             vPmT[1] = vP[1]
-        print(vPmT)
         fp[i] = fun(vPpT, *args)
         fm[i] = fun(vPmT, *args)
 
@@ -169,7 +168,6 @@ def hessian_2sided(fun, vP, *args):
             if nu: #make sure degrees of freedom is correct
                 vPpT[1] = vP[1]
                 vPmT[1] = vP[1]
-            print(vPmT)
             fpp[i,j] = fun(vPpT, *args)
             fpp[j,i] = fpp[i,j]
             fmm[i,j] = fun(vPmT, *args)
@@ -313,30 +311,6 @@ def init_data(filepath):
     return daily_excess_returns(returns_df)
 
 
-def regress_set(df):
-    """
-    Regress a data set, assuming the first column is a constant
-    :param df:
-    :return:
-    """
-
-    vX = sm.add_constant(df[df.columns[0]]).values
-
-    for col in df.columns[1:]:
-        vY = df[col].values
-        model = sm.OLS(vY, vX).fit()
-
-
-def regress(df):
-    """
-    Performes several regressions
-    :return:
-    """
-    regress_set(df)
-
-    for year in df.index.year.unique():
-        regress_set(df.loc[df.index.year == year])
-
 def GetPars_norm(vP):
     """
     Purpose:
@@ -465,6 +439,8 @@ def EstimateRegr_normal(mX, vY):
 
     mS2 = GetCovML(AvgNLnLRegr, vP, iN)
     vS = np.sqrt(np.diag(mS2))
+    print(mS2)
+    exit()
 
     return vP, vS, dLL, sMess
 
@@ -549,6 +525,7 @@ def EstimateRegr_student_t(mX, vY):
     mS2= GetCovML(AvgNLnLRegr_t, vP, iN)
     vS= np.sqrt(np.diag(mS2))
 
+
     return vP, vS, dLL, sMess
 
 def get_pars_student_no_df(vP):
@@ -629,7 +606,6 @@ def optimize(df):
     Output_norm(np.vstack([vPn, vSn]), dLnPdfn, sMessn)
     print('Optimizing with student t')
     vPt, vSt, dLnPdft, sMesst = EstimateRegr_student_t(mX, vY)
-    print(vSt)
     Output_student(np.vstack([vPt, vSt]), dLnPdft, sMesst)
 
     return (vPn, vSn, dLnPdfn, sMessn), (vPt, vSt, dLnPdft, sMesst)
@@ -658,8 +634,6 @@ def plots(df, res):
 
     plt.subplot(1, 2, 2)
     residuals = vY - np.dot(sm.add_constant(mX), [vP[1], vP[2]])
-    resids_mean = np.mean(residuals)
-    resids_sigma = np.sqrt(np.mean(residuals))
 
     mu, std = st.norm.fit(residuals)
 
@@ -672,6 +646,128 @@ def plots(df, res):
     plt.show()
 
 
+def regress_set(df):
+    """
+    Regress a data set, assuming the first column is a constant
+    :param df:
+    :return: a list of models for each regression
+    """
+
+    vX = sm.add_constant(df[df.columns[0]]).values
+
+    model_list = []
+    for col in df.columns[1:]:
+        vY = df[col].values
+        model_list.append(sm.OLS(vY, vX).fit())
+
+    return model_list
+
+
+def regression_plots(dataframes_year, lists_full, stock_names):
+    """
+    Processes the model list into plots
+    :param model_list: a list of regression models
+    :param stock_names: a list of stock names
+    :return: None
+    """
+
+    beta0_list, beta1_list = lists_full
+    beta0_yearlist, beta1_yearlist = dataframes_year
+
+    fig = plt.figure()
+    fig.set_size_inches(12, 5)
+    plt.subplot(1, 2, 1)
+    plt.plot(beta0_yearlist)
+    plt.legend(stock_names)
+    plt.title("Beta0")
+    plt.subplot(1, 2, 2)
+    plt.plot(beta1_yearlist)
+    plt.legend(stock_names)
+    plt.title("Beta1")
+
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+
+    for i in range(0, 4):
+        plt.subplot(1, 2, 1)
+        plt.axhline(y=beta0_list[i], color=colors[i], linestyle='--')
+        plt.subplot(1, 2, 2)
+        plt.axhline(y=beta1_list[i], color=colors[i], linestyle='--')
+
+    plt.show()
+
+
+def regress(df):
+    """
+    Performes several regressions
+    :return: None
+    """
+
+    #regress on daily data
+    model_full_list = regress_set(df)
+    beta0_full = []
+    beta1_full = []
+    betap_full = []
+    betas_full = []
+
+    for model in model_full_list:
+        beta0 = model.params[0]
+        beta1 = model.params[1]
+        betap_full.append(model.t_test('const = 0, x1 = 1').pvalue)
+        betas_full.append(model.bse)
+        beta0_full.append(beta0)
+        beta1_full.append(beta1)
+
+    full_lists = (beta0_full, beta1_full)
+
+    model_year_list = []
+    for year in df.index.year.unique():
+        model_year_list.append(regress_set(df.loc[df.index.year == year]))
+
+    beta0_year = []
+    beta1_year = []
+    betap_year = []
+    betas_year = []
+
+    for year in model_year_list:
+        beta0_yeartemp = []
+        beta1_yeartemp = []
+        betap_yeartemp = []
+        betas_yeartemp = []
+        for model in year:
+            betap_yeartemp.append(model.t_test('const = 0, x1 = 1').pvalue)
+            betas_yeartemp.append(model.bse)
+            beta0_yeartemp.append(model.params[0])
+            beta1_yeartemp.append(model.params[1])
+
+        beta0_year.append(beta0_yeartemp)
+        beta1_year.append(beta1_yeartemp)
+        betap_year.append(betap_yeartemp)
+        betas_year.append(betas_yeartemp)
+
+    df_beta0_year = pd.DataFrame(beta0_year)
+    df_beta1_year = pd.DataFrame(beta1_year)
+    df_beta0_year.index = df.index.year.unique()
+    df_beta1_year.index = df.index.year.unique()
+
+    cols = ['AIG', 'IBM', 'Ford', 'XOM']
+
+    df_beta0_year.columns = cols
+    df_beta1_year.columns = cols
+
+    regression_plots((df_beta0_year, df_beta1_year), full_lists, cols)
+
+    #make a table in copy ready format
+    for j in range(0, 19):
+        print(j, end="")
+        for i in range(0, 4):
+            hline = "\\\ "
+            if i == 3:
+                hline = hline + "\hline"
+            print(" & ", cols[i], " & ", round(beta1_year[j][i],5), " & ", round(betas_year[j][i][1],5), " & ", round(betap_year[j][i][1],5), hline)
+
+
+
+
 def main():
     #Magic 'Numbers'
     filepath = "data/capm.csv"
@@ -681,8 +777,8 @@ def main():
 
     #output
     regress(e_returns_df)
-    res_n, res_t = optimize(e_returns_df)
-    plots(e_returns_df, res_n)
+    #res_n, res_t = optimize(e_returns_df)
+    #plots(e_returns_df, res_n)
 
 
 if __name__ == "__main__":
