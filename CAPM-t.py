@@ -121,7 +121,7 @@ def hessian_2sided(fun, vP, *args):
       Compute numerical hessian, using a 2-sided numerical difference
 
     Author:
-      Kevin Sheppard, adapted by Charles Bos
+      Kevin Sheppard, adapted by Charles Bos, adapted by Niels van der Molen
 
     Source:
       https://www.kevinsheppard.com/Python_for_Econometrics
@@ -136,6 +136,9 @@ def hessian_2sided(fun, vP, *args):
     """
     iP = np.size(vP,0)
     vP= vP.reshape(iP)    # Ensure vP is 1D-array
+    nu = False
+    if vP.shape[0] ==4: #make sure degrees of freedom is correct
+        nu = True
 
     f = fun(vP, *args)
     vh= _gh_stepsize(vP)
@@ -147,16 +150,29 @@ def hessian_2sided(fun, vP, *args):
     fp = np.zeros(iP)
     fm = np.zeros(iP)
     for i in range(iP):
-        fp[i] = fun(vP+mh[i], *args)
-        fm[i] = fun(vP-mh[i], *args)
+        vPpT = vP + mh[i]
+        vPmT = vP - mh[i]
+        if nu: #make sure degrees of freedom is correct
+            vPpT[1] = vP[1]
+            vPmT[1] = vP[1]
+        print(vPmT)
+        fp[i] = fun(vPpT, *args)
+        fm[i] = fun(vPmT, *args)
 
     fpp = np.zeros((iP,iP))
     fmm = np.zeros((iP,iP))
     for i in range(iP):
         for j in range(i,iP):
-            fpp[i,j] = fun(vP + mh[i] + mh[j], *args)
+            vPpT = vP + mh[i] + mh[j]
+            vPmT = vP - mh[i] - mh[j]
+
+            if nu: #make sure degrees of freedom is correct
+                vPpT[1] = vP[1]
+                vPmT[1] = vP[1]
+            print(vPmT)
+            fpp[i,j] = fun(vPpT, *args)
             fpp[j,i] = fpp[i,j]
-            fmm[i,j] = fun(vP - mh[i] - mh[j], *args)
+            fmm[i,j] = fun(vPmT, *args)
             fmm[j,i] = fmm[i,j]
 
     vh = vh.reshape((iP,1))
@@ -168,6 +184,7 @@ def hessian_2sided(fun, vP, *args):
             mH[i,j] = (fpp[i,j] - fp[i] - fp[j] + f + f - fm[i] - fm[j] + fmm[i,j])/mhh[i,j]/2
             mH[j,i] = mH[i,j]
 
+    print(mH)
     return mH
 
 
@@ -438,7 +455,7 @@ def EstimateRegr_normal(mX, vY):
     for i in range(iK):
         bounds.append((None, None))
 
-    res = opt.minimize(AvgNLnLRegr, vP0, args=(), method="L-BFGS-B", bounds=bounds)
+    res = opt.minimize(AvgNLnLRegr, vP0, args=(), method="BFGS")
     # res= opt.minimize(AvgNLnLRegrXY, vP0, args=(vY, mX), method="BFGS")
 
     vP = res.x
@@ -481,7 +498,7 @@ def LnLRegr_student_t(vP, vY, mX):
     vE= vY - mX @ vBeta
 
     vLL = st.t.logpdf(x=vE, df=dDegFree, loc=np.sqrt(dSigma))
-    dLL= np.sum(vLL, axis= 0)
+    dLL= np.sum(vLL, axis=0)
 
     print(".", end="")             # Give sign of life
 
@@ -527,13 +544,20 @@ def EstimateRegr_student_t(mX, vY):
     vP= res.x
     sMess= res.message
     dLL= -iN*res.fun
-    #print ("\nBFGS results in ", sMess, "\nPars: ", vP, "\nLL= ", dLL, ", f-eval= ", res.nfev)
-
+    print ("\nBFGS results in ", sMess, "\nPars: ", vP, "\nLL= ", dLL, ", f-eval= ", res.nfev)
+    vP2 = get_pars_student_no_df(vP)
     mS2= GetCovML(AvgNLnLRegr_t, vP, iN)
     vS= np.sqrt(np.diag(mS2))
 
     return vP, vS, dLL, sMess
 
+def get_pars_student_no_df(vP):
+    """Returns parameters without degrees of freedom"""
+    vPn = np.zeros(vP.shape[0]-1)
+    vPn[0] = vP[0]
+    vPn[1] = vP[2]
+    vPn[2] = vP[3]
+    return vPn
 
 def GetParNames_norm(iK):
     """
@@ -605,6 +629,7 @@ def optimize(df):
     Output_norm(np.vstack([vPn, vSn]), dLnPdfn, sMessn)
     print('Optimizing with student t')
     vPt, vSt, dLnPdft, sMesst = EstimateRegr_student_t(mX, vY)
+    print(vSt)
     Output_student(np.vstack([vPt, vSt]), dLnPdft, sMesst)
 
     return (vPn, vSn, dLnPdfn, sMessn), (vPt, vSt, dLnPdft, sMesst)
