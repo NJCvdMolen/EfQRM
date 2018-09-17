@@ -299,18 +299,6 @@ def daily_excess_returns(df):
     return df.dropna(axis=0)
 
 
-def init_data(filepath):
-    """
-    Initializes the DataFrame
-    :param filepath: a string with the path to the source csv file
-    :return: a data frame with excess returns
-    """
-    #readcapm4.main()
-    clean_df = clean_data(pd.read_csv(filepath))
-    returns_df = get_returns(clean_df)
-    return daily_excess_returns(returns_df)
-
-
 def GetPars_norm(vP):
     """
     Purpose:
@@ -696,7 +684,7 @@ def regression_plots(dataframes_year, lists_full, stock_names):
     plt.show()
 
 
-def regress(df):
+def regress_daily(df):
     """
     Performes several regressions
     :return: None
@@ -766,6 +754,126 @@ def regress(df):
             print(" & ", cols[i], " & ", round(beta1_year[j][i],5), " & ", round(betas_year[j][i][1],5), " & ", round(betap_year[j][i][1],5), hline)
 
 
+def get_monthly_returns(df):
+    """
+    Calculates log returns
+    :param df: a cleaned dataframe containing price data
+    :return: a dataframe with log returns and rates (in percentages)
+    """
+    df.index = pd.to_datetime(df.index)
+    df = df.resample('m').last()
+
+    # save the column names
+    names = df.columns
+    # takes the log differences of the market proxy
+    market_returns = np.diff(np.log(df[names[0]]))
+
+    # divides the interest rate by 100 such that we have dicimals
+    rates = df[names[1]].divide(100, 'rows')[1:len(df.index)]
+
+    # makes the stacks the market returns on top of the interest rates
+    df_result = np.vstack((market_returns, rates))
+
+    # loops over the stocks taking the log differences and adding them to the dataframe
+    for i in names[2:len(names)]:
+        stock_returns_i = np.diff(np.log(df[i]))
+        df_result = np.vstack((df_result, stock_returns_i))
+
+    # chages the stacked tabel to a dataframe
+    # vstack gives an (6Xn)-matrix, thus if we transpose it we obtain a (nX6)-matrix
+    df_result = pd.DataFrame(df_result).T
+
+    # remove the FIRST index
+    df_result.index = pd.to_datetime(df.index[1:len(df.index)])
+
+    # gives the dataframe with daily log returns the same column names as the input dataframe
+    df_result.columns = df.columns
+
+    return df_result.loc[:, :] * 100
+
+
+def init_data(filepath):
+    """
+    Initializes the DataFrame
+    :param filepath: a string with the path to the source csv file
+    :return: a data frame with excess returns
+    """
+    #readcapm4.main()
+    clean_df = clean_data(pd.read_csv(filepath))
+    returns_df = get_returns(clean_df)
+    returnsm_df = get_monthly_returns(clean_df)
+    return daily_excess_returns(returns_df), daily_excess_returns(returnsm_df)
+
+
+def regress_monthly(df):
+    model_full_list = regress_set(df)
+    beta0_full = []
+    beta1_full = []
+    betap_full = []
+    betas_full = []
+
+    for model in model_full_list:
+        beta0 = model.params[0]
+        beta1 = model.params[1]
+        betap_full.append(model.t_test('const = 0, x1 = 1').pvalue)
+        betas_full.append(model.bse)
+        beta0_full.append(beta0)
+        beta1_full.append(beta1)
+
+    full_lists = (beta0_full, beta1_full)
+
+    block_bounds = np.linspace(0, len(df), 4)
+    block_length = block_bounds[1]-1
+
+    blockdf = df
+    blockdf = blockdf.reset_index()
+
+    model_block_list = []
+    for block in block_bounds[:-1]:
+        tempdf = blockdf.loc[block:block+block_length]
+        tempdf = tempdf.set_index(tempdf.columns[0])
+        model_block_list.append(regress_set(tempdf))
+
+    beta0_block = []
+    beta1_block = []
+    betap_block = []
+    betas_block = []
+
+    for block in model_block_list:
+        beta0_blocktemp = []
+        beta1_blocktemp = []
+        betap_blocktemp = []
+        betas_blocktemp = []
+        for model in block:
+            betap_blocktemp.append(model.t_test('const = 0, x1 = 1').pvalue)
+            betas_blocktemp.append(model.bse)
+            beta0_blocktemp.append(model.params[0])
+            beta1_blocktemp.append(model.params[1])
+
+        beta0_block.append(beta0_blocktemp)
+        beta1_block.append(beta1_blocktemp)
+        betap_block.append(betap_blocktemp)
+        betas_block.append(betas_blocktemp)
+
+    df_beta0_block = pd.DataFrame(beta0_block)
+    df_beta1_block = pd.DataFrame(beta1_block)
+
+    cols = ['AIG', 'IBM', 'Ford', 'XOM']
+
+    df_beta0_block.columns = cols
+    df_beta1_block.columns = cols
+
+    regression_plots((df_beta0_block, df_beta1_block), full_lists, cols)
+
+    # make a table in copy ready format
+    for j in range(0, 3):
+        print(j, end="")
+        for i in range(0, 4):
+            hline = "\\\ "
+            if i == 3:
+                hline = hline + "\hline"
+            print(" & ", cols[i], " & ", round(beta1_block[j][i], 5), " & ", round(betas_block[j][i][1], 5), " & ",
+                  round(betap_block[j][i][1], 5), hline)
 
 
 def main():
@@ -773,10 +881,11 @@ def main():
     filepath = "data/capm.csv"
 
     #init
-    e_returns_df = init_data(filepath)
+    e_returns_df, e_returnsm_df = init_data(filepath)
 
     #output
-    regress(e_returns_df)
+    #regress_daily(e_returns_df)
+    regress_monthly(e_returnsm_df)
     #res_n, res_t = optimize(e_returns_df)
     #plots(e_returns_df, res_n)
 
